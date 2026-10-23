@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kasir Toko</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="login">
+  <div class="lbox">
+    <h1>Kasir Toko</h1>
+    <p class="mut" style="margin:0">Masuk dengan akun karyawan.</p>
+    <form id="lf" autocomplete="off">
+      <label class="fld">Username<input id="lu" autocapitalize="none" required></label>
+      <label class="fld">Password<input id="lp" type="password" required></label>
+      <p id="le"></p>
+      <button class="btn" style="margin-top:4px">Masuk</button>
+    </form>
+  </div>
+</div>
+
+<div id="app" hidden>
+  <header>
+    <h1>Kasir</h1>
+    <nav id="nav"></nav>
+    <span class="who" id="who"></span>
+    <button class="out" data-act="logout">Keluar</button>
+  </header>
+  <main id="view"></main>
+  <button class="bar" id="bar" data-act="open" hidden></button>
+</div>
+
+<div id="err" hidden style="position:fixed;left:12px;right:12px;bottom:12px;z-index:99;padding:12px;border-radius:10px;background:#c0262d;color:#fff;font:14px system-ui"></div>
+<div id="modal" hidden></div>
+<div id="toast" hidden></div>
+
+<script src="script.js" onerror="var e=document.getElementById('err');e.textContent='File script.js tidak ditemukan. Pastikan index.html, style.css, dan script.js ada di folder yang sama.';e.hidden=false"></script>
+</body>
+</html>
