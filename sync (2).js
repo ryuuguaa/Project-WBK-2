@@ -39,7 +39,7 @@ const DB_URL = 'https://upsmkyadika13-38061-default-rtdb.asia-southeast1.firebas
 
   async function poll(){
     if(pending || me === undefined || !products) return;
-    let d; try{ d = await req('GET', ''); }catch(e){ return fail(e); }
+    let d; try{ d = await req('GET', '/'); }catch(e){ return fail(e); }
     if(pending) return;
     warned = false; d = d || {};
     const first = !ready, seed = []; let changed = false;
