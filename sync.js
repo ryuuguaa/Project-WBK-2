@@ -1,5 +1,5 @@
 /* sync.js: sinkronisasi antar perangkat lewat Firebase Realtime Database (REST, tanpa library) */
-const DB_URL = 'https://upsmkyadika13-default-rtdb.asia-southeast1.firebasedatabase.app'; // GANTI dengan URL Realtime Database dari Firebase Console milikmu
+const DB_URL = 'https://upsmkyadika13-38061-default-rtdb.asia-southeast1.firebasedatabase.app';
 
 (function(){
   if(!DB_URL) return;
