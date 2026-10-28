@@ -1,5 +1,5 @@
 /* sync.js: sinkronisasi antar perangkat lewat Firebase Realtime Database (REST, tanpa library) */
-const DB_URL = ''; // isi URL Realtime Database, contoh: 'https://nama-proyek-default-rtdb.asia-southeast1.firebasedatabase.app'
+const DB_URL = 'https://upsmkyadika13-default-rtdb.asia-southeast1.firebasedatabase.app'; // GANTI dengan URL Realtime Database dari Firebase Console milikmu
 
 (function(){
   if(!DB_URL) return;
