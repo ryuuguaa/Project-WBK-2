@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Kasir Toko</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="stylesheet" href="style.css">
 </head>
@@ -13,11 +14,9 @@
   <div class="lbox">
     <img class="llogo" src="logo.jpg" alt="Logo SMK Yadika 13">
     <h1>Kasir Toko</h1>
-    <div class="ltabs"><button type="button" class="chip on" data-lm="pel">Pelanggan</button><button type="button" class="chip" data-lm="adm">Admin</button></div>
     <form id="lf" autocomplete="off">
       <label class="fld">Username<input id="lu" autocapitalize="none" autocomplete="off"></label>
-      <label class="fld" id="kw">Kelas<input id="lk" placeholder="mis. XI RPL 1" autocomplete="off"></label>
-      <label class="fld" id="pw" hidden>Password<input id="lp" type="password"></label>
+      <label class="fld" id="pw">Password<input id="lp" type="password"></label>
       <p id="le"></p>
       <button class="btn" style="margin-top:4px">Masuk</button>
     </form>
@@ -32,6 +31,7 @@
     <span class="who" id="who"></span>
     <button class="out" data-act="logout">Keluar</button>
   </header>
+  <div id="scanwin" hidden></div>
   <main id="view"></main>
   <button class="bar" id="bar" data-act="open" hidden></button>
 </div>
@@ -40,8 +40,7 @@
 <div id="modal" hidden></div>
 <div id="toast" hidden></div>
 
-<script src="script.js" onerror="var e=document.getElementById('err');e.textContent='File script.js tidak ditemukan. Pastikan index.html, style.css, dan script.js ada di folder yang sama.';e.hidden=false"></script>
-<script src="order.js"></script>
-<script src="sync.js?v=4"></script>
+<script src="script.js?v=7" onerror="var e=document.getElementById('err');e.textContent='File script.js tidak ditemukan. Pastikan index.html, style.css, dan script.js ada di folder yang sama.';e.hidden=false"></script>
+<script src="sync.js?v=7"></script>
 </body>
 </html>
