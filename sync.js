@@ -16,8 +16,6 @@ const DB_URL = 'https://upsmkyadika13-38061-default-rtdb.asia-southeast1.firebas
   };
   const COL = {
     kasir_products:{n:'products', get:() => products, set:v => { products = v; }, key:x => x.id, sort:(a, b) => a.id - b.id},
-    kasir_orders:{n:'orders', get:() => orders, set:v => { orders = v; }, key:x => x.id, sort:byT},
-    kasir_customers:{n:'customers', get:() => customers, set:v => { customers = v; }, key:x => x.u},
     kasir_hist:{n:'hist', get:() => hist, set:v => { hist = v; }, key:x => x.id, sort:byT},
     kasir_stockin:{n:'stockin', get:() => stockLog, set:v => { stockLog = v; }, key:x => x.t.replace(/\D/g, ''), sort:byT}
   };
@@ -74,10 +72,11 @@ const DB_URL = 'https://upsmkyadika13-38061-default-rtdb.asia-southeast1.firebas
       c.set(arr); rawSet(k, arr); changed = true;
     });
     ready = true; seed.forEach(push);
-    const busy = !$('#modal').hidden || ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement && document.activeElement.tagName);
+    const ae = document.activeElement;
+    const busy = !$('#modal').hidden || !!(ae && ['INPUT', 'SELECT', 'TEXTAREA'].includes(ae.tagName) && !(ae.id === 'bc' && !ae.value));
     if((changed || dirty) && me){
       if(busy) dirty = true;
-      else { dirty = false; if(me.role === 'pelanggan' && view === 'menu'){ mlist(); cbar(); } else render(); }
+      else { dirty = false; render(); }
     }
   }
   setInterval(poll, 3000); poll();
