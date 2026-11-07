@@ -51,6 +51,7 @@ async function init(){
   qris = LS.get('kasir_qris', '');
   stockLog = LS.get('kasir_stockin', []);
   me = LS.get('kasir_me', null);
+  if(me && me.role === 'pelanggan'){ me = null; LS.set('kasir_me', null); }
   start();
 }
 
@@ -76,17 +77,15 @@ const prod = id => products.find(p => String(p.id) === String(id));
 const total = () => Object.keys(cart).reduce((s, id) => s + (prod(id) ? prod(id).price * cart[id] : 0), 0);
 
 function render(){
-  const nb = orders.filter(o => o.status === 'baru').length;
-  const tabs = [['kasir','Kasir'], ['pesanan','Pesanan' + (nb ? ' (' + nb + ')' : '')], ['riwayat','Riwayat']];
-  if(me.role === 'admin'){ tabs.push(['pelanggan','Pelanggan']); tabs.push(['stok','Stok']); tabs.push(['kelola','Kelola']); }
+  const tabs = [['kasir','Kasir'], ['riwayat','Riwayat']];
+  if(me.role === 'admin'){ tabs.push(['stok','Stok']); tabs.push(['kelola','Kelola']); }
   $('#nav').innerHTML = tabs.map(t => `<button class="tab ${view===t[0]?'on':''}" data-tab="${t[0]}">${t[1]}</button>`).join('');
   $('#who').textContent = me.name;
   $('#view').classList.toggle('pos-on', view === 'kasir');
   document.body.classList.remove('sheet');
+  if(view !== 'kasir' && view !== 'stok' && view !== 'kelola') camOff();
   if(view === 'kasir') viewKasir();
   else if(view === 'riwayat') viewRiwayat();
-  else if(view === 'pesanan') viewPesanan();
-  else if(view === 'pelanggan') viewPelanggan();
   else if(view === 'stok') viewStok();
   else viewKelola();
   $('#bar').hidden = view !== 'kasir';
@@ -97,6 +96,7 @@ function viewKasir(){
   const list = products.filter(p => cat === 'Semua' || p.cat === cat);
   $('#view').innerHTML = `<div class="pos">
     <section class="cat">
+      <div class="scanrow"><input id="bc" autocomplete="off" autocapitalize="none" placeholder="Scan barcode atau ketik kode, lalu Enter"><button class="chip" data-act="cam">📷 Kamera</button></div>
       <div class="chips">${['Semua', ...CATS].map(c => `<button class="chip ${c===cat?'on':''}" data-cat="${c}">${c}</button>`).join('')}</div>
       <div class="grid">${list.map(p => `<button class="item" data-add="${p.id}" ${tracked(p) && p.stock <= 0 ? 'disabled' : ''}>
         <span class="ph">${p.img ? `<img src="${p.img}" alt="">` : (p.emoji || '📦')}</span>
@@ -104,6 +104,7 @@ function viewKasir(){
     </section>
     <aside class="cart" id="cart"></aside></div>`;
   renderCart();
+  if(matchMedia('(pointer:fine)').matches){ const b = $('#bc'); if(b) b.focus(); }
 }
 
 function addCart(id){
@@ -198,21 +199,119 @@ function viewRiwayat(){
       Kasir: ${esc(x.kasir)}<br>Dibayar ${rp(x.paid)}, kembalian ${rp(x.change)}</div></details>`).join('') || '<p class="mut">Belum ada transaksi. Riwayat muncul di sini setelah pembayaran pertama.</p>'}</div>`;
 }
 
-function xl(){
+/* ---------- EXCEL (rapi: lebar kolom, header hijau, format Rp & tanggal, filter, baris beku) ---------- */
+function xlData(){
+  const sold = {}, inn = {};
+  hist.forEach(x => x.items.forEach(i => { sold[i.nama] = (sold[i.nama] || 0) + i.qty; }));
+  stockLog.forEach(x => { inn[x.nama] = (inn[x.nama] || 0) + x.qty; });
+  return {
+    trx: hist.map(x => ({id:x.id, t:new Date(x.t), kasir:x.kasir, method:x.method, item:x.items.map(i => i.nama + ' x' + i.qty).join(', '), total:x.total, paid:x.paid, change:x.change})),
+    det: hist.flatMap(x => x.items.map(i => ({id:x.id, t:new Date(x.t), nama:i.nama, kat:i.kat, harga:i.harga, qty:i.qty, sub:i.harga * i.qty}))),
+    stok: products.map(p => { const tr = tracked(p); return {nama:p.name, code:p.code ? String(p.code) : '', kat:p.cat, harga:p.price, stok: tr ? p.stock : 'tidak dihitung', terjual:sold[p.name] || 0, masuk:inn[p.name] || 0, status: !tr ? 'Tidak dihitung' : p.stock <= 0 ? 'Habis' : p.stock <= 5 ? 'Menipis' : 'Aman', nilai: tr ? p.stock * p.price : 0}; }),
+    masuk: stockLog.map(s => ({t:new Date(s.t), nama:s.nama, qty:s.qty, sebelum:s.sebelum, sesudah:s.sesudah, oleh:s.oleh}))
+  };
+}
+
+const XL_FILE = () => 'riwayat-kasir-' + new Date().toISOString().slice(0, 10) + '.xlsx';
+
+async function xlPretty(){
+  const D = xlData(), wb = new ExcelJS.Workbook();
+  wb.creator = 'Kasir Toko'; wb.created = new Date();
+  const RP = '"Rp" #,##0', DT = 'dd/mm/yyyy hh:mm', LINE = {style:'thin', color:{argb:'FFE4E9E6'}};
+  const fill = argb => ({type:'pattern', pattern:'solid', fgColor:{argb}});
+  /* opt.sum = daftar kunci kolom yang dijumlah di baris TOTAL (rumus + hasil, supaya langsung tampil) */
+  function sheet(name, cols, rows, opt = {}){
+    const ws = wb.addWorksheet(name, {views:[{state:'frozen', ySplit:1}]});
+    ws.columns = cols.map(c => ({header:c.h, key:c.k, width:Math.max(c.w, Math.ceil(c.h.length * 1.3) + 6)}));
+    rows.forEach(r => ws.addRow(r));
+    ws.eachRow((row, n) => {
+      row.eachCell({includeEmpty:true}, (cell, ci) => {
+        const c = cols[ci - 1]; if(!c) return;
+        cell.border = {top:LINE, bottom:LINE, left:LINE, right:LINE};
+        if(n === 1){
+          cell.font = {bold:true, color:{argb:'FFFFFFFF'}};
+          cell.fill = fill('FF25A244');
+          cell.alignment = {vertical:'middle', horizontal:'center', wrapText:true};
+        }else{
+          if(c.f) cell.numFmt = c.f;
+          cell.alignment = {vertical:'top', wrapText:!!c.wrap, horizontal: c.f === RP || c.num ? 'right' : (c.f === DT ? 'center' : 'left')};
+        }
+      });
+    });
+    ws.getRow(1).height = 28;
+    const last = rows.length + 1;
+    ws.autoFilter = {from:{row:1, column:1}, to:{row:Math.max(last, 1), column:cols.length}};
+    if(opt.sum && rows.length){
+      const tot = {}; tot[cols[0].k] = 'TOTAL';
+      if(opt.label) tot[opt.label.k] = opt.label.v;
+      opt.sum.forEach(k => {
+        const ci = cols.findIndex(c => c.k === k) + 1, L = String.fromCharCode(64 + ci);
+        tot[k] = {formula:`SUM(${L}2:${L}${last})`, result:rows.reduce((a, r) => a + (typeof r[k] === 'number' ? r[k] : 0), 0)};
+      });
+      const r = ws.addRow(tot);
+      r.eachCell({includeEmpty:true}, (cell, ci) => {
+        const c = cols[ci - 1]; if(!c) return;
+        cell.font = {bold:true}; cell.fill = fill('FFE8F6EC');
+        cell.border = {top:{style:'medium', color:{argb:'FF25A244'}}, bottom:LINE, left:LINE, right:LINE};
+        if(c.f && c.f !== DT) cell.numFmt = c.f;
+        cell.alignment = {vertical:'middle', horizontal: c.f === RP || c.num ? 'right' : 'left'};
+      });
+    }
+    return ws;
+  }
+  sheet('Transaksi', [
+    {h:'ID', k:'id', w:14}, {h:'Waktu', k:'t', w:19, f:DT}, {h:'Kasir', k:'kasir', w:18}, {h:'Metode', k:'method', w:12},
+    {h:'Item', k:'item', w:50, wrap:true}, {h:'Total', k:'total', w:16, f:RP}, {h:'Dibayar', k:'paid', w:16, f:RP}, {h:'Kembalian', k:'change', w:16, f:RP}
+  ], D.trx, {sum:['total', 'paid', 'change'], label:{k:'item', v:D.trx.length + ' transaksi'}});
+  sheet('Detail Item', [
+    {h:'ID', k:'id', w:14}, {h:'Waktu', k:'t', w:19, f:DT}, {h:'Produk', k:'nama', w:30}, {h:'Kategori', k:'kat', w:14},
+    {h:'Harga', k:'harga', w:14, f:RP}, {h:'Qty', k:'qty', w:8, num:true}, {h:'Subtotal', k:'sub', w:16, f:RP}
+  ], D.det, {sum:['qty', 'sub']});
+  const sb = sheet('Stok Barang', [
+    {h:'Produk', k:'nama', w:30}, {h:'Barcode', k:'code', w:20, f:'@'}, {h:'Kategori', k:'kat', w:14}, {h:'Harga', k:'harga', w:14, f:RP},
+    {h:'Stok Sekarang', k:'stok', w:16, num:true}, {h:'Total Terjual', k:'terjual', w:15, num:true}, {h:'Total Masuk', k:'masuk', w:14, num:true},
+    {h:'Status', k:'status', w:16}, {h:'Nilai Stok', k:'nilai', w:16, f:RP}
+  ], D.stok, {sum:['stok', 'terjual', 'masuk', 'nilai']});
+  const WARN = {Habis:['FFFDE2E4', 'FFB4232F'], Menipis:['FFFFF1D6', 'FF9A5B00'], Aman:['FFE8F6EC', 'FF1A8F3C']};
+  D.stok.forEach((x, i) => {
+    const w = WARN[x.status]; if(!w) return;
+    const c = sb.getRow(i + 2).getCell(8);
+    c.fill = fill(w[0]); c.font = {bold:true, color:{argb:w[1]}}; c.alignment = {vertical:'top', horizontal:'center'};
+  });
+  sheet('Stok Masuk', [
+    {h:'Waktu', k:'t', w:19, f:DT}, {h:'Produk', k:'nama', w:30}, {h:'Masuk', k:'qty', w:10, num:true},
+    {h:'Stok Sebelum', k:'sebelum', w:14, num:true}, {h:'Stok Sesudah', k:'sesudah', w:14, num:true}, {h:'Oleh', k:'oleh', w:18}
+  ], D.masuk, {sum:['qty']});
+  const buf = await wb.xlsx.writeBuffer();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+  a.download = XL_FILE(); document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+/* cadangan kalau ExcelJS gagal dimuat: tetap ada lebar kolom dan filter */
+function xlPlain(){
+  const D = xlData(), f = d => d.toLocaleString('id-ID'), wb = XLSX.utils.book_new();
+  const add = (name, rows) => {
+    const ws = XLSX.utils.json_to_sheet(rows), keys = rows.length ? Object.keys(rows[0]) : [];
+    ws['!cols'] = keys.map(k => ({wch: Math.min(60, Math.max(k.length, ...rows.map(r => String(r[k] ?? '').length)) + 2)}));
+    if(ws['!ref']) ws['!autofilter'] = {ref:ws['!ref']};
+    XLSX.utils.book_append_sheet(wb, ws, name);
+  };
+  add('Transaksi', D.trx.map(x => ({ID:x.id, Waktu:f(x.t), Kasir:x.kasir, Metode:x.method, Item:x.item, Total:x.total, Dibayar:x.paid, Kembalian:x.change})));
+  add('Detail Item', D.det.map(x => ({ID:x.id, Waktu:f(x.t), Produk:x.nama, Kategori:x.kat, Harga:x.harga, Qty:x.qty, Subtotal:x.sub})));
+  add('Stok Barang', D.stok.map(x => ({Produk:x.nama, Barcode:x.code, Kategori:x.kat, Harga:x.harga, 'Stok Sekarang':x.stok, 'Total Terjual':x.terjual, 'Total Masuk':x.masuk, Status:x.status, 'Nilai Stok':x.nilai})));
+  add('Stok Masuk', D.masuk.map(x => ({Waktu:f(x.t), Produk:x.nama, Masuk:x.qty, 'Stok Sebelum':x.sebelum, 'Stok Sesudah':x.sesudah, Oleh:x.oleh})));
+  XLSX.writeFile(wb, XL_FILE());
+}
+
+async function xl(){
   if(!hist.length && !stockLog.length) return toast('Belum ada data');
+  if(window.ExcelJS){
+    try{ return await xlPretty(); }catch(e){ console.error('ExcelJS gagal:', e); }
+  }
   if(!window.XLSX) return toast('Library Excel belum termuat, cek koneksi internet');
-  const f = iso => new Date(iso).toLocaleString('id-ID');
-  const a = hist.map(x => ({ID:x.id, Waktu:f(x.t), Kasir:x.kasir, Metode:x.method, Item:x.items.map(i => i.nama + ' x' + i.qty).join(', '), Total:x.total, Dibayar:x.paid, Kembalian:x.change}));
-  const b = hist.flatMap(x => x.items.map(i => ({ID:x.id, Waktu:f(x.t), Produk:i.nama, Kategori:i.kat, Harga:i.harga, Qty:i.qty, Subtotal:i.harga * i.qty})));
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(a), 'Transaksi');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(b), 'Detail Item');
-  const c = products.map(p => ({Produk:p.name, Kategori:p.cat, Harga:p.price, Stok: tracked(p) ? p.stock : 'tidak dihitung'}));
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(c), 'Stok Barang');
-  const d = stockLog.map(s => ({Waktu:f(s.t), Produk:s.nama, Masuk:s.qty, 'Stok Sebelum':s.sebelum, 'Stok Sesudah':s.sesudah, Oleh:s.oleh}));
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(d), 'Stok Masuk');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(orders.map(o => ({ID:o.id, Waktu:f(o.t), Nama:o.name, Kelas:o.kelas, Item:o.items.map(i => i.nama + ' x' + i.qty).join(', '), Total:o.total, Bayar:o.pay, Status:ST[o.status], Catatan:o.note}))), 'Pesanan Online');
-  XLSX.writeFile(wb, 'riwayat-kasir-' + new Date().toISOString().slice(0, 10) + '.xlsx');
+  xlPlain();
 }
 
 /* ---------- KELOLA (admin) ---------- */
@@ -230,8 +329,9 @@ function viewKelola(){
       <div class="two"><label class="fld">Emoji (jika tanpa foto)<input id="pe" maxlength="4" placeholder="🍛"></label>
       <label class="fld">Foto produk<input id="pf" type="file" accept="image/*"></label></div>
       <label class="fld">Stok awal (kosong = tidak dihitung)<input id="ps" inputmode="numeric"></label>
+      <div class="fld">Barcode (opsional)<div class="scanrow" style="margin:4px 0 0"><input id="pb" autocomplete="off" placeholder="scan atau ketik kode" style="width:auto;margin-top:0"><button type="button" class="chip" data-act="capnew">📷 Scan</button></div></div>
       <button class="btn" data-act="addp">Simpan produk</button></div>
-    <div class="box2"><h3>Produk (${products.length})</h3>${products.map(p => `<div class="row"><span>${p.img ? '🖼️' : (p.emoji || '📦')} ${esc(p.name)}<br><small>${esc(p.cat)}, ${rp(p.price)}<br>${tracked(p) ? 'stok ' + p.stock : 'stok tidak dihitung'}</small></span><span class="acts"><button class="del ed" data-stk="${p.id}">Koreksi</button><button class="del" data-delp="${p.id}">Hapus</button></span></div>`).join('')}</div>
+    <div class="box2"><h3>Produk (${products.length})</h3>${products.map(p => `<div class="row"><span>${p.img ? '🖼️' : (p.emoji || '📦')} ${esc(p.name)}<br><small>${esc(p.cat)}, ${rp(p.price)}<br>${tracked(p) ? 'stok ' + p.stock : 'stok tidak dihitung'}${p.code ? '<br>barcode ' + esc(p.code) : ''}</small></span><span class="acts"><button class="del ed" data-bc="${p.id}">Barcode</button><button class="del ed" data-stk="${p.id}">Koreksi</button><button class="del" data-delp="${p.id}">Hapus</button></span></div>`).join('')}</div>
     <div class="box2"><h3>Tambah karyawan</h3>
       <label class="fld">Nama<input id="un"></label>
       <div class="two"><label class="fld">Username<input id="uu" autocapitalize="none"></label>
@@ -273,9 +373,11 @@ function bigQ(){
 async function addP(){
   const n = $('#pn').value.trim(), pr = num($('#pp').value);
   if(!n || !pr) return toast('Isi nama dan harga produk');
+  const code = ($('#pb').value || '').trim();
+  if(code && products.some(p => p.code === code)) return toast('Barcode itu sudah dipakai produk lain');
   const f = $('#pf').files[0], img = f ? await shrink(f) : '';
   const sv = $('#ps').value.trim();
-  products.push({id:Date.now(), name:n, price:pr, cat:$('#pc').value, emoji:$('#pe').value.trim() || '📦', img, stock: sv === '' ? null : num(sv)});
+  products.push({id:Date.now(), name:n, price:pr, cat:$('#pc').value, emoji:$('#pe').value.trim() || '📦', img, stock: sv === '' ? null : num(sv), code});
   LS.set('kasir_products', products); toast('Produk ditambahkan'); render();
 }
 
@@ -314,16 +416,22 @@ document.addEventListener('click', e => {
   else if(d.act === 'bigq') bigQ();
   else if(d.act === 'addstock') addStock();
   else if(d.stk) editStock(d.stk);
+  else if(d.act === 'cam'){ scanTarget = null; camOn(); }
+  else if(d.act === 'camoff') camOff();
+  else if(d.act === 'capnew'){ scanTarget = {input:'pb'}; camOn('produk baru'); }
+  else if(d.act === 'bcman') bcManual();
+  else if(d.bc) bcFor(d.bc);
   else if(d.act === 'addp') addP();
   else if(d.act === 'addu') addU();
-  else if(d.act === 'logout'){ me = null; cart = {}; paidVal = 0; LS.set('kasir_me', null); start(); }
+  else if(d.act === 'logout'){ camOff(); me = null; cart = {}; paidVal = 0; LS.set('kasir_me', null); start(); }
 });
 
 /* ---------- STOK MASUK ---------- */
 function viewStok(){
   $('#view').innerHTML = `<div class="page"><h2>Stok barang</h2>
     <div class="box2"><h3>Barang masuk</h3>
-      <p class="mut" style="margin:0">Pilih produk dan isi jumlah yang masuk. Stok bertambah, lalu berkurang otomatis setiap ada penjualan.</p>
+      <p class="mut" style="margin:0">Pilih produk dan isi jumlah yang masuk. Stok bertambah, lalu berkurang otomatis setiap ada penjualan. Scan barcode untuk memilih produk.</p>
+      <div class="scanrow" style="margin-top:10px"><input id="bc" autocomplete="off" placeholder="Scan barcode atau ketik kode, lalu Enter"><button class="chip" data-act="cam">📷 Kamera</button></div>
       <label class="fld">Produk<select id="si">${products.map(p => `<option value="${p.id}">${esc(p.name)} (${tracked(p) ? 'stok ' + p.stock : 'stok tidak dihitung'})</option>`).join('')}</select></label>
       <label class="fld">Jumlah masuk<input id="sq" inputmode="numeric" placeholder="0"></label>
       <button class="btn" data-act="addstock">Tambah stok</button></div>
@@ -353,5 +461,124 @@ function editStock(id){
   LS.set('kasir_products', products); render();
 }
 
+
+/* ---------- BARCODE ---------- */
+let scanTarget = null, scanStop = null, scanLast = '', scanAt = 0, camTok = 0;
+const findCode = c => products.find(p => p.code && String(p.code).trim() === c);
+
+function beep(ok){
+  try{
+    const a = new (window.AudioContext || window.webkitAudioContext)(), o = a.createOscillator(), g = a.createGain();
+    o.connect(g); g.connect(a.destination); o.frequency.value = ok ? 880 : 200; g.gain.value = .08;
+    o.start(); o.stop(a.currentTime + .12); setTimeout(() => a.close(), 400);
+  }catch(e){}
+  if(navigator.vibrate) navigator.vibrate(ok ? 40 : [60, 40, 60]);
+}
+
+function flash(cls, name, sub){
+  const w = $('#scanwin'); if(!w || w.hidden) return;
+  w.classList.remove('ok', 'bad'); void w.offsetWidth; w.classList.add(cls);
+  if($('#sn')) $('#sn').textContent = name;
+  if($('#ss')) $('#ss').textContent = sub || '';
+  setTimeout(() => w.classList.remove('ok', 'bad'), 700);
+}
+
+function scanCode(raw, fromCam){
+  const c = String(raw || '').trim(); if(!c) return;
+  const now = Date.now();
+  if(fromCam && c === scanLast && now - scanAt < 1800) return;
+  scanLast = c; scanAt = now;
+  if(scanTarget) return capture(c);
+  const p = findCode(c), camOpen = !$('#scanwin').hidden;
+  if(!p){ beep(false); flash('bad', 'Tidak terdaftar', c); toast('Barcode belum terdaftar: ' + c); return; }
+  if(view === 'stok'){
+    const sel = $('#si'); if(sel){ sel.value = p.id; lastSi = p.id; }
+    const q = $('#sq'); if(q && !camOpen) q.focus();
+    beep(true); flash('ok', p.name, 'Isi jumlah masuk'); if(!camOpen) toast(p.name + ' dipilih'); return;
+  }
+  if(view !== 'kasir'){ toast('Buka tab Kasir atau Stok untuk scan'); return; }
+  if(addCart(p.id)){ beep(true); flash('ok', p.name, rp(p.price) + ' x' + cart[p.id]); if(!camOpen) toast(p.name + ' ditambahkan'); }
+  else{ beep(false); flash('bad', p.name, 'Stok habis'); }
+}
+
+function capture(c){
+  const t = scanTarget, dup = products.find(p => p.code === c && (!t.id || String(p.id) !== String(t.id)));
+  if(dup){ beep(false); flash('bad', 'Sudah dipakai', dup.name); toast('Barcode itu sudah dipakai ' + dup.name); return; }
+  beep(true); scanTarget = null;
+  if(t.input){ const i = $('#' + t.input); if(i) i.value = c; toast('Barcode terbaca: ' + c); }
+  else{ const p = prod(t.id); if(p){ p.code = c; LS.set('kasir_products', products); toast(p.name + ': barcode ' + c); render(); } }
+  camOff();
+}
+
+function bcFor(id){ const p = prod(id); if(!p) return; scanTarget = {id:p.id}; camOn(p.name); }
+
+function bcManual(){
+  const t = scanTarget; if(!t) return;
+  const p = t.id ? prod(t.id) : null;
+  const v = prompt('Ketik atau scan kode barcode' + (p ? ' untuk ' + p.name + ' (kosongkan = hapus barcode)' : ''));
+  if(v === null){ camOff(); return; }
+  const c = v.trim();
+  if(c) return capture(c);
+  if(p){ delete p.code; LS.set('kasir_products', products); toast('Barcode ' + p.name + ' dihapus'); camOff(); render(); }
+  else camOff();
+}
+
+const loadZX = () => window.ZXing ? Promise.resolve() : new Promise((ok, no) => {
+  const s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
+  s.onload = ok; s.onerror = () => no(new Error('zx')); document.head.appendChild(s);
+});
+
+function camOff(keep){
+  camTok++;
+  if(scanStop){ try{ scanStop(); }catch(e){} scanStop = null; }
+  const w = $('#scanwin'); if(w){ w.hidden = true; w.innerHTML = ''; w.className = ''; }
+  if(!keep) scanTarget = null;
+}
+
+async function camOn(label){
+  camOff(true); const my = camTok, w = $('#scanwin');
+  w.hidden = false;
+  w.innerHTML = `<div class="vwrap"><video id="sv" playsinline muted></video></div>
+    <div class="sinfo"><b id="sn">${scanTarget ? 'Scan barcode ' + esc(label || 'produk') : 'Arahkan ke barcode'}</b><small id="ss" class="mut"></small>
+    <div class="acts2">${scanTarget ? '<button class="chip" data-act="bcman">Ketik manual</button>' : ''}<button class="chip" data-act="camoff">Tutup</button></div></div>`;
+  const v = $('#sv');
+  try{
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('nocam');
+    if('BarcodeDetector' in window){
+      const want = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'code_93', 'codabar', 'itf', 'qr_code'];
+      let ok = want; try{ const sup = await BarcodeDetector.getSupportedFormats(); ok = want.filter(f => sup.includes(f)); }catch(e){}
+      const det = new BarcodeDetector({formats:ok});
+      const st = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}}, audio:false});
+      if(my !== camTok){ st.getTracks().forEach(t => t.stop()); return; }
+      v.srcObject = st; await v.play();
+      let busy = false;
+      const tm = setInterval(async () => {
+        if(busy || v.readyState < 2) return; busy = true;
+        try{ const r = await det.detect(v); if(r.length) scanCode(r[0].rawValue, true); }catch(e){}
+        busy = false;
+      }, 200);
+      scanStop = () => { clearInterval(tm); st.getTracks().forEach(t => t.stop()); };
+    }else{
+      await loadZX();
+      if(my !== camTok) return;
+      const rd = new ZXing.BrowserMultiFormatReader();
+      rd.decodeFromVideoDevice(null, 'sv', r => { if(r) scanCode(r.getText(), true); });
+      scanStop = () => rd.reset();
+    }
+  }catch(e){
+    if(my !== camTok) return;
+    const t = scanTarget; camOff(true);
+    toast(e && e.name === 'NotAllowedError' ? 'Izin kamera ditolak. Izinkan kamera untuk situs ini.' : 'Kamera tidak bisa dibuka. Pakai kolom ketik atau scanner USB.');
+    if(t){ scanTarget = t; bcManual(); }
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if(e.target.id === 'bc' && e.key === 'Enter'){ e.preventDefault(); const v = e.target.value; e.target.value = ''; scanCode(v); return; }
+  if((view === 'kasir' || view === 'stok') && $('#modal').hidden && !e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1 && !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)){
+    const b = $('#bc'); if(b) b.focus();
+  }
+});
 
 window.addEventListener('load', init);
