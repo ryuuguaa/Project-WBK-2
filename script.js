@@ -194,9 +194,10 @@ function viewRiwayat(){
   $('#view').innerHTML = `<div class="page"><h2>Riwayat transaksi</h2>
     <div class="sum"><div><small>Hari ini</small><strong>${rp(tt.reduce((s, x) => s + x.total, 0))}</strong></div><div><small>Transaksi hari ini</small><strong>${tt.length}</strong></div></div>
     <button class="btn sec" style="margin:0 0 12px" data-act="xl">Unduh semua ke Excel</button>
+    ${me.role === 'admin' && hist.length ? '<button class="btn sec" style="margin:0 0 12px;color:var(--bad)" data-act="delhall">Hapus semua riwayat</button>' : ''}
     ${hist.map(x => `<details class="tx"><summary><span><b>${x.id}</b><small>${new Date(x.t).toLocaleString('id-ID')}</small></span><span class="mt">${x.method}</span><strong>${rp(x.total)}</strong></summary>
       <div class="det"><ul>${x.items.map(i => `<li>${esc(i.nama)} x${i.qty} — ${rp(i.harga * i.qty)}</li>`).join('')}</ul>
-      Kasir: ${esc(x.kasir)}<br>Dibayar ${rp(x.paid)}, kembalian ${rp(x.change)}</div></details>`).join('') || '<p class="mut">Belum ada transaksi. Riwayat muncul di sini setelah pembayaran pertama.</p>'}</div>`;
+      Kasir: ${esc(x.kasir)}<br>Dibayar ${rp(x.paid)}, kembalian ${rp(x.change)}${me.role === 'admin' ? `<br><button class="del" data-delh="${x.id}">Hapus transaksi ini</button>` : ''}</div></details>`).join('') || '<p class="mut">Belum ada transaksi. Riwayat muncul di sini setelah pembayaran pertama.</p>'}</div>`;
 }
 
 /* ---------- EXCEL (rapi: lebar kolom, header hijau, format Rp & tanggal, filter, baris beku) ---------- */
@@ -410,6 +411,8 @@ document.addEventListener('click', e => {
   else if(d.act === 'close') document.body.classList.remove('sheet');
   else if(d.act === 'pay') pay();
   else if(d.act === 'mclose') mclose();
+  else if(d.delh){ if(confirm('Hapus transaksi ' + d.delh + ' dari riwayat? Tindakan ini tidak bisa dibatalkan.')){ hist = hist.filter(x => String(x.id) !== d.delh); LS.set('kasir_hist', hist); render(); } }
+  else if(d.act === 'delhall'){ if(confirm('Hapus SEMUA riwayat transaksi? Unduh Excel dulu kalau datanya masih diperlukan. Tindakan ini tidak bisa dibatalkan.')){ hist = []; LS.set('kasir_hist', hist); toast('Riwayat dihapus'); render(); } }
   else if(d.act === 'xl') xl();
   else if(d.act === 'saveq') saveQ();
   else if(d.act === 'delq'){ if(confirm('Hapus QRIS toko?')){ qris = ''; LS.set('kasir_qris', ''); render(); } }
@@ -581,4 +584,4 @@ document.addEventListener('keydown', e => {
   }
 });
 
-window.addEventListener('load', init); 
+window.addEventListener('load', init);
