@@ -167,3 +167,4 @@ body.sheet .cart{transform:none}
 .acts2{display:flex;gap:6px;flex-wrap:wrap}
 
 @media (prefers-reduced-motion:reduce){.cart,.item{transition:none}}
+.tx .del{color:var(--bad);font-size:13px;font-weight:600;padding:8px 0 0}
