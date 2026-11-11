@@ -168,3 +168,5 @@ body.sheet .cart{transform:none}
 
 @media (prefers-reduced-motion:reduce){.cart,.item{transition:none}}
 .tx .del{color:var(--bad);font-size:13px;font-weight:600;padding:8px 0 0}
+.tx summary{flex-wrap:wrap}
+.tx summary .del{padding:6px 14px;border:1px solid var(--line);border-radius:999px;margin-left:auto}
