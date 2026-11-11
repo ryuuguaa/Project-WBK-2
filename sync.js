@@ -53,6 +53,7 @@ const DB_URL = 'https://upsmkyadika13-38061-default-rtdb.asia-southeast1.firebas
       else req('PUT', c.n + '/' + id, a).catch(fail);
       s[id] = JSON.parse(J(a));
     });
+    if(!Object.keys(cur).length && Object.keys(s).length){ req('DELETE', c.n).catch(fail); snap[c.n] = {}; return; }
     Object.keys(s).forEach(id => { if(!cur[id]){ req('DELETE', c.n + '/' + id).catch(fail); delete s[id]; } });
   }
   LS.set = (k, v) => { rawSet(k, v); push(k); };
